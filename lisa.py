@@ -210,11 +210,7 @@ def getConfig():
             modules = "modules"
         )
     )
-    try:
-        os.getenv("LISA_CONFIG")
-    except:
-        path_config = path_config
-    else:
+    if os.getenv("LISA_CONFIG") is not None:
         path_config = os.getenv("LISA_CONFIG")
 
     if not os.path.isfile(path_config + "/config.ini"):
