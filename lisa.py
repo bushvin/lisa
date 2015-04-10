@@ -46,7 +46,7 @@ def showModuleHelp( config, modulename ):
     sys.path.append(config["path"]["modules"])
     print config["path"]["modules"] + "/mod_%s.py" %modulename
     if not os.path.isfile(config["path"]["modules"] + "/mod_%s.py" %modulename):
-        print "The module %s doesn't exist." % modulename
+        printErrorMessage( "Thr module %s doesn't exist." % modulename)
         sys.exit()
 
     exec "import mod_%s" % modulename
@@ -128,8 +128,8 @@ def getCache( config ):
     printVerboseMessage("Getting cache")
     latest_cache_file = config["path"]["cache"] + "/inventory.latest"
     if not os.path.isfile(latest_cache_file):
-        print "There is no cache available."
-        print "Please rerun lisa using the --refresh-cache option"
+        printErrorMessage( "There is no cache available.")
+        printErrorMessage( "Please rerun lisa using the --refresh-cache option")
         sys.exit()
     
     with open(latest_cache_file) as json_file:
@@ -210,8 +210,16 @@ def getConfig():
             modules = "modules"
         )
     )
+    try:
+        os.getenv("LISA_CONFIG")
+    except:
+        path_config = path_config
+    else:
+        path_config = os.getenv("LISA_CONFIG")
+
     if not os.path.isfile(path_config + "/config.ini"):
         printErrorMessage("Could not find the config file: %s" % path_config + "/config.ini")
+        sys.exit(1)
     with open(path_config + "/config.ini") as ini_file:
         ini = iniparse.INIConfig(ini_file)
 
@@ -242,7 +250,7 @@ def getConfig():
             config["path"][p] = path_config + "/" + config["path"][p]
         config["path"][p] = os.path.realpath(config["path"][p])
         if not os.path.isdir(config["path"][p]):
-            print "the %s path option in config.ini doesn't exist!" % p
+            printErrorMessage( "the %s path option in config.ini doesn't exist!" % p)
             sys.exit()
     
     if type(ini["files"]) is iniparse.ini.INISection:
@@ -257,7 +265,7 @@ def getConfig():
             config["files"][f] = path_config + "/" + config["files"][f]
         config["files"][f] = os.path.realpath(config["files"][f])
         if not os.path.isfile(config["files"][f]):
-            print "the %s file option in config.ini doesn't exist!" % f
+            printErrorMessage( "the %s file option in config.ini doesn't exist!" % f)
             sys.exit()
     printVerboseMessage("Configuration checking done")
     return config
