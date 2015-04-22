@@ -1,19 +1,18 @@
-#!/bin/python -tt
+#!/usr/bin/python -tt
 # -*- coding: utf-8 -*-
+# vim: tabstop=8 expandtab shiftwidth=4 softtabstop=4
 
 # author: William Leemans <willie@elaba.net>
 # copyright: Copyright 2015, William Leemans
 # license: GPL v3
 
 
+import iniparse
+import json
+import time
 import os
 import sys
-import json
-import iniparse
-from jinja2 import Template
 from optparse import OptionParser
-from time import gmtime, strftime
-
 
 path_config = "."
 verbose = False
@@ -22,14 +21,11 @@ def main():
     options = parse_args()
 
     path_working = os.path.realpath(os.path.dirname(__file__))
-
     config = getConfig()
-
 
     if options.module_help is not None:
         showModuleHelp(config, options.module_help)
         sys.exit()
-        
 
     if options.refresh_cache:
         inventory = refreshCache(config)
@@ -38,27 +34,37 @@ def main():
     else:
         inventory = getCache(config)
 
-    print json.dumps( inventory, sort_keys=True, indent=4, separators=(',',': ') )
+    if options.listinventory is True:
+        print json.dumps( inventory, sort_keys=True, indent=4, separators=(',',': ') )
+    elif options.showhost is not None:
+        try:
+            print json.dumps(inventory["_meta"]["hostvars"][options.showhost], sort_keys=True, indent=4, separators=(',',': '))
+        except:
+            print json.dumps({})
+    else:
+        print json.dumps({})
     sys.exit()
-
 
 def showModuleHelp( config, modulename ):
     sys.path.append(config["path"]["modules"])
     print config["path"]["modules"] + "/mod_%s.py" %modulename
     if not os.path.isfile(config["path"]["modules"] + "/mod_%s.py" %modulename):
-        printErrorMessage( "Thr module %s doesn't exist." % modulename)
-        sys.exit()
+        printErrorMessage("The module %s doesn't exist." % modulename)
+        sys.exit(1)
 
     exec "import mod_%s" % modulename
     exec "res = mod_%s.mod_%s(config)" % (modulename, modulename )
-    print res.help()
+    try:
+        print res.help()
+    except AttributeError:
+        print "There is no help for %s." % modulename
 
    
 def refreshCache( config ):
     printVerboseMessage("Refreshing cache...")
     inventory = getInventory( config )
-    cache_file = config["path"]["cache"] + "/inventory." + strftime(config["general"]["cache_timestamp"], gmtime())
-    cache_link = config["path"]["cache"] + "/inventory.latest"
+    cache_file = config["path"]["cache"] + "/lisa_inv." + time.strftime(config["general"]["cache_timestamp"], time.gmtime())
+    cache_link = config["path"]["cache"] + "/lisa_inv.latest"
     with open( cache_file, "w" ) as f:
         f.write(json.dumps(inventory))
     if os.path.exists(cache_link):
@@ -84,18 +90,21 @@ def getInventory( config ):
         exec "import mod_%s" % m
 
     hostvars = dict()
-    for d in config["hostvars"]["priority"]:
-        parse_definition = False
-        if hostvarscfg[d]["enabled"]:
+    for mod in config["hostvars"]["priority"]:
+        if hostvarscfg[mod]["enabled"]:
             try:
-                 modulescfg[hostvarscfg[d]["module"]]
+                modulescfg[hostvarscfg[mod]["module"]]
             except:
-                 args = dict()
+                args = dict()
             else:
-                args = modulescfg[hostvarscfg[d]["module"]].copy()
-            args.update(hostvarscfg[d])
-            exec "res = mod_%s.mod_%s(config, args, hostvars)" % (hostvarscfg[d]["module"], hostvarscfg[d]["module"])
+                args = modulescfg[hostvarscfg[mod]["module"]].copy()
+
+            args.update(hostvarscfg[mod])
+            starttime = int(round(time.time() *1000))
+            exec "res = mod_%s.mod_%s(config, args, hostvars)" % (hostvarscfg[mod]["module"], hostvarscfg[mod]["module"])
             hostvars = joinHostvars(hostvars, res.getHostvars())
+            endtime = int(round(time.time() *1000))
+            printVerboseMessage("Creating hostvars using %s took %s miliseconds" % (mod, (endtime - starttime)))
     
     inventory.update({ "_meta": dict( { "hostvars": hostvars } ) })
 
@@ -106,19 +115,23 @@ def getInventory( config ):
         exec "import mod_%s" % m
 
     hostgroups = dict()
-    for group in config["groups"]["priority"]:
-        if groupscfg[group]["enabled"]:
+    for mod in config["groups"]["priority"]:
+        if groupscfg[mod]["enabled"]:
             try:
-                modulescfg[groupscfg[group]["module"]]
+                modulescfg[groupscfg[mod]["module"]]
             except:
                 args = dict()
             else: 
-                args = modulescfg[groupscfg[group]["module"]].copy()
-            args.update(groupscfg[group])
-            exec "res = mod_%s.mod_%s(config, args, hostvars)" % (groupscfg[group]["module"], groupscfg[group]["module"])
+                args = modulescfg[groupscfg[mod]["module"]].copy()
+            args.update(groupscfg[mod])
+            starttime = int(round(time.time() *1000))
+            exec "res = mod_%s.mod_%s(config, args, hostvars)" % (groupscfg[mod]["module"], groupscfg[mod]["module"])
             hostgroups = joinGroups(hostgroups, res.getGroups())
+            endtime = int(round(time.time() *1000))
+            printVerboseMessage("Creating groups using %s took %s miliseconds" % (mod, (endtime - starttime)))
 
     for group in hostgroups:
+        hostgroups[group]["hosts"].sort()
         inventory.update( { group : hostgroups[group]} )
 
     return inventory
@@ -126,64 +139,49 @@ def getInventory( config ):
 
 def getCache( config ):
     printVerboseMessage("Getting cache")
-    latest_cache_file = config["path"]["cache"] + "/inventory.latest"
+    starttime = int(round(time.time() *1000))
+    latest_cache_file = config["path"]["cache"] + "/lisa_inv.latest"
     if not os.path.isfile(latest_cache_file):
-        printErrorMessage( "There is no cache available.")
-        printErrorMessage( "Please rerun lisa using the --refresh-cache option")
-        sys.exit()
+        printErrorMessage("There is no cache available.")
+        printErrorMessage("Please rerun lisa using the --refresh-cache option")
+        sys.exit(1)
     
     with open(latest_cache_file) as json_file:
         data = json.load(json_file)
+    endtime = int(round(time.time() *1000))
+    printVerboseMessage("Loading cache took %s miliseconds" % (endtime - starttime))
     return data
 
 
 def joinGroups( target, source ):
-    newlist = dict()
-    parsed = list()
-    for groupname in target:
-        try:
-            source[groupname]
-            newlist[groupname]
-        except:
-            newlist.update( { groupname: target[groupname] } )
-        else:
-            parsed.append(groupname)
-            target[groupname].update(source[groupname])
-            newlist[groupname].update(source[groupname])
-
     for groupname in source:
-        if groupname not in parsed:
-            newlist.update( {groupname: source[groupname]} )
+        try:
+            target[groupname]
+        except:
+            target[groupname] = dict()
 
-    return newlist
+        target[groupname].update( source[groupname] )
+
+    return target
 
 def joinHostvars( target, source ):
-    parsed = list()
-    not_parsed = list()
-    newlist = dict()
-    for hostname in target:
-        try:
-            source[hostname]
-        except:
-            newlist.update( {hostname: target[hostname]} )
-        else:
-            parsed.append(hostname)
-            target[hostname].update(source[hostname])
-            newlist.update( {hostname: target[hostname]} )
-
     for hostname in source:
-        if hostname not in parsed:
-            newlist.update( {hostname: source[hostname]} )
+        try:
+            target[hostname]
+        except:
+            target[hostname] = dict()
 
-    return newlist
+        target[hostname].update( source[hostname] )
+
+    return target
 
 def printVerboseMessage( message ):
     global verbose
     if verbose:
-        print >> sys.stderr, message
+        print >> sys.stderr, '\033[94m' +message+ '\033[m'
 
 def printErrorMessage( message ):
-    print >> sys.stderr, message
+    print >> sys.stderr, '\033[01;31m' +message+ '\033[m'
           
 def getConfig():
     global path_config
@@ -214,7 +212,7 @@ def getConfig():
         path_config = os.getenv("LISA_CONFIG")
 
     if not os.path.isfile(path_config + "/config.ini"):
-        printErrorMessage("Could not find the config file: %s" % path_config + "/config.ini")
+        printErrorMessage("Could not find the config file: %s/config.ini" % path_config)
         sys.exit(1)
     with open(path_config + "/config.ini") as ini_file:
         ini = iniparse.INIConfig(ini_file)
@@ -246,29 +244,26 @@ def getConfig():
             config["path"][p] = path_config + "/" + config["path"][p]
         config["path"][p] = os.path.realpath(config["path"][p])
         if not os.path.isdir(config["path"][p]):
-            printErrorMessage( "the %s path option in config.ini doesn't exist!" % p)
-            sys.exit()
+            printErrorMessage("the %s path option in config.ini doesn't exist!" % p)
+            sys.exit(1)
     
     if type(ini["files"]) is iniparse.ini.INISection:
         if type(ini["files"]["hostvars"]) is str:
-            config["files"]["hostvars"] = ini["files"]["hostvars"]
+            config["files"]["hostvars"] =  os.path.realpath(path_config + "/" + ini["files"]["hostvars"])
         if type(ini["files"]["groups"]) is str:
-            config["files"]["groups"] = ini["files"]["groups"]
+            config["files"]["groups"] =  os.path.realpath(path_config + "/" + ini["files"]["groups"])
         if type(ini["files"]["modules"]) is str:
-            config["files"]["modules"] = ini["files"]["modules"]
-    for f in config["files"]:
-        if config["files"][f][0] != "/":
-            config["files"][f] = path_config + "/" + config["files"][f]
-        config["files"][f] = os.path.realpath(config["files"][f])
-        if not os.path.isfile(config["files"][f]):
-            printErrorMessage( "the %s file option in config.ini doesn't exist!" % f)
-            sys.exit()
+            config["files"]["modules"] =  os.path.realpath(path_config + "/" + ini["files"]["modules"])
     printVerboseMessage("Configuration checking done")
     return config
 
 
 def getHostvarsConfig( config ):
     printVerboseMessage("Get hostvars configuration")
+    if not os.path.isfile(config["files"]["hostvars"]):
+        printErrorMessage("%s could not be found." % config["files"]["hostvars"])
+        sys.exit(1)
+
     config = ini2dict(config["files"]["hostvars"])
     for section in config:
         try:
@@ -276,7 +271,7 @@ def getHostvarsConfig( config ):
         except:
             config[section]["enabled"] = True
         else:
-            if config[section]["enabled"].lower() == "true" or config[section]["enabled"].lower() == "yes" or config[section]["enabled"] == "1":
+            if config[section]["enabled"].lower() in ( "enabled", "true", "yes", "1" ):
                 config[section]["enabled"] = True
             else:
                 config[section]["enabled"] = False
@@ -296,12 +291,20 @@ def getHostvarsConfig( config ):
 
 def getModulesConfig( config ):
     printVerboseMessage("Get modules configuration")
+    if not os.path.isfile(config["files"]["modules"]):
+        printErrorMessage("%s could not be found." % config["files"]["modules"])
+        sys.exit(1)
+
     config = ini2dict(config["files"]["modules"])
     return config
 
 
 def getGroupsConfig( config ):
     printVerboseMessage("Get groups configuration")
+    if not os.path.isfile(config["files"]["groups"]):
+        printErrorMessage("%s could not be found." % config["files"]["groups"])
+        sys.exit(1)
+
     config = ini2dict(config["files"]["groups"])
     for section in config:
         try:
@@ -309,7 +312,7 @@ def getGroupsConfig( config ):
         except:
             config[section]["enabled"] = True
         else:
-            if config[section]["enabled"].lower() in ["true", "yes", "1"]:
+            if config[section]["enabled"].lower() in ( "enabled", "true", "yes", "1" ):
                 config[section]["enabled"] = True
             else:
                 config[section]["enabled"] = False
@@ -381,6 +384,9 @@ priority=infrastructure, static_data
 
     """
     parser = OptionParser(usage=usage)
+    parser.add_option("", "--list", dest="listinventory", help="List the entire inventory", action="store_true", default=False)
+    parser.add_option("", "--host", dest="showhost", help="Show the hostvars for a specific host", action="store", default=None)
+
     parser.add_option("-v", "--verbose", dest="verbose", help="Be verbose", action="store_true", default=False)
     parser.add_option("-r", "--refresh-cache", dest="refresh_cache", help="Refresh the cache file if used (see config.ini)", action="store_true", default=False)
     parser.add_option("", "--module-help", dest="module_help", help="Show help for a module", action="store", default=None)

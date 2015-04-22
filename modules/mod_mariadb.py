@@ -44,8 +44,8 @@ class mod_mariadb():
         cursor.execute(self._getQuery())
         fields = [i[0] for i in cursor.description]
         if len(fields) < 2:
-            print "Your group query doesn't contain at least 2 fields: the groupname, and hostname"
-            sys.exit()
+            printErrorMessage( "Your group query doesn't contain at least 2 fields: the groupname, and hostname")
+            sys.exit(1)
         for rec in cursor.fetchall():
             try:
                 self._hostgroups[rec[fields[0]]]
@@ -71,8 +71,8 @@ class mod_mariadb():
             args["query_file"]
         except:
             if not query:
-                print "query or query_file should be defined."
-                sys.exit()
+                printErrorMessage( "query or query_file should be defined.")
+                sys.exit(1)
         else:
             if args["query_file"] == "/":
                 args["query"] = self._loadSQLfile(args["query_file"])
@@ -84,7 +84,7 @@ class mod_mariadb():
 
     def _loadSQLfile( self, filename ):
        if not os.path.isfile(filename):
-           print "File %s cannot be found!" % filename
+           printErrorMessage( "File %s cannot be found!" % filename)
            sys.exit()
        else:
            with open( filename ) as f:
@@ -116,31 +116,31 @@ class mod_mariadb():
         try:
             args["user"]
         except:
-            print "You must add a user to connect to the MariaDB host (user=...)"
-            sys.exit()
+            printErrorMessage( "You must add a user to connect to the MariaDB host (user=...)")
+            sys.exit(1)
         else:
             db_config["user"] = args["user"]
 
         try:
             args['password']
         except:
-            print "You haven't specified a password for the MariaDB user (password=...)"
-            sys.exit()
+            printErrorMessage("You haven't specified a password for the MariaDB user (password=...)")
+            sys.exit(1)
         else:
             db_config["passwd"] = args['password']
         
         try:
             args['db']
         except:
-            print "You haven't specified a MariaDB dB (db=...)"
-            sys.exit()
+            printErrorMessage("You haven't specified a MariaDB dB (db=...)")
+            sys.exit(1)
         else:
             db_config["db"] = args['db']
         if vartype == "hostvars":
             try:
                 args['index']
             except:
-                print "You must specify an index for the results to be parsed (index=...)"
+                printErrorMessage("You must specify an index for the results to be parsed (index=...)")
                 sys.exit()
 
         return db_config
