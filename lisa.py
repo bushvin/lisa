@@ -102,7 +102,7 @@ def getInventory( config ):
             args.update(hostvarscfg[mod])
             starttime = int(round(time.time() *1000))
             exec "res = mod_%s.mod_%s(config, args, hostvars)" % (hostvarscfg[mod]["module"], hostvarscfg[mod]["module"])
-            hostvars = joinHostvars(hostvars, res.getHostvars())
+            hostvars = joinHostvars(config, hostvars, res.getHostvars())
             endtime = int(round(time.time() *1000))
             printVerboseMessage("Creating hostvars using %s took %s miliseconds" % (mod, (endtime - starttime)))
     
@@ -164,13 +164,19 @@ def joinGroups( target, source ):
 
     return target
 
-def joinHostvars( target, source ):
+def joinHostvars( config, target, source ):
+
     for hostname in source:
         try:
             target[hostname]
         except:
-            target[hostname] = dict()
-
+            if len(config["hostvars"]["facts"]) == 0:
+                target[hostname] = dict()
+            else:
+                target[hostname] = dict()
+                for el in config["hostvars"]["facts"]:
+                    target[hostname][el] = "unknown"
+            #target[hostname] = dict({ el: "unknown" } for el in config["hostvars"]["facts"])
         target[hostname].update( source[hostname] )
 
     return target
@@ -188,7 +194,8 @@ def getConfig():
     printVerboseMessage("Checking and loading configuration")
     config = dict( 
         hostvars = dict(
-            priority = []
+            priority = [],
+            facts = []
         ),
         groups = dict(
             priority = []
@@ -220,7 +227,9 @@ def getConfig():
     if type(ini["hostvars"]) is iniparse.ini.INISection:
         if type(ini["hostvars"]["priority"]) is str:
             config["hostvars"]["priority"] = [ el.strip(" ") for el in ini["hostvars"]["priority"].split(",") ]
-    config["hostvars"]["priority"].reverse()
+            config["hostvars"]["priority"].reverse()
+        if type(ini["hostvars"]["facts"]) is str:
+            config["hostvars"]["facts"] = [ el.strip(" ") for el in ini["hostvars"]["facts"].split(",") ]
 
     if type(ini["groups"]) is iniparse.ini.INISection:
         if type(ini["groups"]["priority"]) is str:
