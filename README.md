@@ -4,7 +4,7 @@ Lightweight Inventory Script for Ansible
 
 Generate a dynamic inventory for Ansible
 
-Debepndencies
+Dependencies
 =============
 python2, python-jinja, python-iniparse
 
